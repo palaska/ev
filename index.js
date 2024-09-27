@@ -13,7 +13,7 @@ let annual_rent_increase_pct = 3;
 let annual_service_charge_increase_pct = 5;
 
 let mortgage_amount = parseInt(process.env.MORTGAGE_AMOUNT);
-let mortgage_duration_years = 30;
+let mortgage_duration_years = 35;
 let house_value_yearly_appreciation_pct = 2;
 
 let ltv = 0.6;
@@ -43,6 +43,12 @@ let mortgage_rate_in_years = [
   2,
 ];
 
+if (timeline_years > mortgage_rate_in_years.length) {
+  throw new Error(
+    `There are not enough mortgage rates for the timeline years provided.`
+  );
+}
+
 if ([process.env.CAPITAL, process.env.MORTGAGE_AMOUNT].some((v) => !v)) {
   throw new Error("Environment variables are missing");
 }
@@ -51,6 +57,8 @@ for (let i = 0; i <= 4; i++) {
   house_value = minimum_house_value + i * 100_000;
   if_buy();
 }
+
+if_rent();
 
 function if_rent() {
   let final_capital = compound_capital(
@@ -80,11 +88,12 @@ function if_buy() {
 
   let today_capital = capital - today_spent;
   if (today_capital < 0) {
-    throw new Error(
+    console.log(
       `You don't have enough capital to buy the house, you are ${
         today_capital * -1
       } GBP short.`
     );
+    return;
   }
 
   let final_capital = compound_capital(
@@ -99,18 +108,10 @@ function if_buy() {
     timeline_years
   );
 
-  let total_mortgage_paid = compute_mortgage_paid();
-  let do_i_paid_all_mortgage = mortgage_duration_years <= timeline_years;
-  let remaining_mortgage_debt = (() => {
-    if (do_i_paid_all_mortgage) {
-      return 0;
-    } else {
-      return (
-        mortgage_amount *
-        ((mortgage_duration_years - timeline_years) / mortgage_duration_years)
-      );
-    }
-  })();
+  let {
+    total_paid: total_mortgage_paid,
+    remaining_debt: remaining_mortgage_debt,
+  } = compute_mortgage_paid();
 
   let total_service_charge_paid = compound_service_charge();
 
@@ -121,14 +122,12 @@ function if_buy() {
     remaining_mortgage_debt -
     total_service_charge_paid;
 
-  console.log(`Buying final NAV: £${Math.floor(final_nav).toLocaleString()}\n`);
+  console.log(`Final NAV: £${Math.floor(final_nav).toLocaleString()}\n`);
 }
 
-if_rent();
-
 function compute_mortgage_paid() {
-  let totalPaid = 0;
-  let remainingAmount = mortgage_amount;
+  let total_paid = 0;
+  let remaining_debt = mortgage_amount;
   let monthly_payments_per_year = [];
 
   // Loop through each year
@@ -137,28 +136,26 @@ function compute_mortgage_paid() {
     year < Math.min(mortgage_duration_years, timeline_years);
     year++
   ) {
-    const yearlyRate = mortgage_rate_in_years[year];
-    const monthlyRate = yearlyRate / 12 / 100;
-    const monthsInYear = 12;
-    const totalMonths = (mortgage_duration_years - year) * 12; // remaining months
+    const monthly_rate = mortgage_rate_in_years[year] / 12 / 100;
+    const months_left = (mortgage_duration_years - year) * 12; // remaining months
 
     // Calculate monthly payment using the mortgage formula for the remaining balance
-    const monthlyPayment =
-      (remainingAmount *
-        (monthlyRate * Math.pow(1 + monthlyRate, totalMonths))) /
-      (Math.pow(1 + monthlyRate, totalMonths) - 1);
+    const monthly_payment =
+      (remaining_debt *
+        (monthly_rate * Math.pow(1 + monthly_rate, months_left))) /
+      (Math.pow(1 + monthly_rate, months_left) - 1);
 
-    monthly_payments_per_year.push(monthlyPayment);
+    monthly_payments_per_year.push(monthly_payment);
 
     // Update remaining balance after one year of payments
-    const yearlyPayment = monthlyPayment * monthsInYear;
-    totalPaid += yearlyPayment;
+    const yearly_payment = monthly_payment * 12;
+    total_paid += yearly_payment;
 
     // Calculate how much of the yearly payment goes towards interest and principal
-    for (let month = 1; month <= monthsInYear; month++) {
-      const interestPaid = remainingAmount * monthlyRate;
-      const principalPaid = monthlyPayment - interestPaid;
-      remainingAmount -= principalPaid;
+    for (let month = 1; month <= 12; month++) {
+      const interest_paid = remaining_debt * monthly_rate;
+      const principalPaid = monthly_payment - interest_paid;
+      remaining_debt -= principalPaid;
     }
   }
 
@@ -169,7 +166,7 @@ function compute_mortgage_paid() {
   );
 
   // Return the total amount paid over the mortgage period
-  return totalPaid;
+  return { total_paid, remaining_debt };
 }
 
 function compound_service_charge() {
