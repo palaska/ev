@@ -2,21 +2,24 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 let capital = parseInt(process.env.CAPITAL);
-let investment_rate_pct = 6;
+let investment_rate_pct = 9;
 
-let renovation = 100_000;
+let renovation = 20_000;
 
-let current_rent = 3500;
+let current_rent = 4000;
 
+// let annual_service_charge = 12500;
 let annual_service_charge = 0;
 let annual_rent_increase_pct = 3;
-let annual_service_charge_increase_pct = 5;
+let annual_service_charge_increase_pct = 2;
 
 let mortgage_amount = parseInt(process.env.MORTGAGE_AMOUNT);
 let mortgage_duration_years = 35;
-let house_value_yearly_appreciation_pct = 2;
+let house_value_yearly_appreciation_pct = 3;
+let capital_gains_tax = 0.2;
 
 let ltv = 0.6;
+let buying_expense = 8750;
 let minimum_house_value = mortgage_amount / ltv;
 let house_value = minimum_house_value;
 
@@ -24,23 +27,11 @@ let timeline_years = 15;
 
 // covers the next 15 years
 let mortgage_rate_in_years = [
-  3.82,
-  3.82,
-  3.82,
-  3.82,
-  3.82, // 5 years fixed hsbc 60% LTV
+  3.85, 3.85, 3.85, 3.85, 3.85,
 
-  2.5,
-  2.5,
-  2.5,
-  2.5,
-  2.5,
+  3.2, 3.2, 3.2, 3.2, 3.2,
 
-  2,
-  2,
-  2,
-  2,
-  2,
+  2.5, 2.5, 2.5, 2.5, 2.5,
 ];
 
 if (timeline_years > mortgage_rate_in_years.length) {
@@ -53,10 +44,13 @@ if ([process.env.CAPITAL, process.env.MORTGAGE_AMOUNT].some((v) => !v)) {
   throw new Error("Environment variables are missing");
 }
 
-for (let i = 0; i <= 4; i++) {
-  house_value = minimum_house_value + i * 100_000;
-  if_buy();
-}
+// let initial_house_value = 1_000_000;
+// for (let i = 0; i <= 10; i++) {
+//   // house_value = minimum_house_value + i * 100_000;
+//   house_value = initial_house_value + i * 50_000;
+//   if_buy();
+// }
+if_buy();
 
 if_rent();
 
@@ -66,8 +60,10 @@ function if_rent() {
     investment_rate_pct,
     timeline_years
   );
+  let cgt = (final_capital - capital) * capital_gains_tax;
+  let final_capital_minus_tax = final_capital - cgt;
   let total_spent_to_rent = compound_rent();
-  let final_nav = final_capital - total_spent_to_rent;
+  let final_nav = final_capital_minus_tax - total_spent_to_rent;
   console.log(
     `Renting, Final NAV: £${Math.floor(final_nav).toLocaleString()}\n`
   );
@@ -80,11 +76,10 @@ function if_buy() {
     ).toLocaleString()} and renovating for £${renovation.toLocaleString()}`
   );
 
+  let stamp_duty = calculate_stamp_duty(house_value);
+
   let today_spent =
-    house_value -
-    mortgage_amount +
-    calculate_stamp_duty(house_value) +
-    renovation;
+    house_value - mortgage_amount + stamp_duty + renovation + buying_expense;
 
   let today_capital = capital - today_spent;
   if (today_capital < 0) {
@@ -115,12 +110,9 @@ function if_buy() {
 
   let total_service_charge_paid = compound_service_charge();
 
+  let money_paid = total_mortgage_paid + total_service_charge_paid;
   let final_nav =
-    final_capital +
-    final_home_value -
-    total_mortgage_paid -
-    remaining_mortgage_debt -
-    total_service_charge_paid;
+    final_capital - money_paid + final_home_value - remaining_mortgage_debt;
 
   console.log(`Final NAV: £${Math.floor(final_nav).toLocaleString()}\n`);
 }
